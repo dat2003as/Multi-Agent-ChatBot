@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Dashboard</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Outfit', sans-serif; background: #fdfdfd; color: #0f172a; overflow-x: hidden; }
+        .glow-orange { filter: drop-shadow(0 0 10px rgba(249, 115, 22, 0.4)); }
+        
+        @keyframes pulse-glow {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.1); opacity: 0.7; box-shadow: 0 0 15px rgba(249, 115, 22, 0.6); }
+        }
+        .animate-led { animation: pulse-glow 2s infinite ease-in-out; }
+        
+        @keyframes shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+        .shimmer {
+            background: linear-gradient(90deg, #f97316 0%, #fb923c 50%, #f97316 100%);
+            background-size: 200% 100%;
+            animation: shimmer 3s infinite linear;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .chart-container { height: 280px; width: 100%; }
+        .table-container { box-shadow: 0 10px 50px rgba(0,0,0,0.05); }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo } = React;
+
+        function App() {
+            const [logs, setLogs] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [searchQuery, setSearchQuery] = useState("");
+            const chartRef = useRef(null);
+            const chartInstance = useRef(null);
+
+            const fetchLogs = async () => {
+                try {
+                    const response = await fetch('/api/v1/debug/requests');
+                    const data = await response.json();
+                    setLogs(data);
+                    setLoading(false);
+                } catch (error) {
+                    console.error("Failed to fetch logs:", error);
+                }
+            };
+
+            const clearLogs = async () => {
+                if (!confirm("Bạn có chắc chắn muốn xoá toàn bộ logs không?")) return;
+                try {
+                    await fetch('/api/v1/debug/requests', { method: 'DELETE' });
+                    fetchLogs();
+                } catch (error) {
+                    console.error("Failed to clear logs:", error);
+                }
+            };
+
+            // Filter logs based on search query
+            const filteredLogs = useMemo(() => {
+                if (!searchQuery) return logs;
+                const lowerQ = searchQuery.toLowerCase();
+                return logs.filter(log => 
+                    (log.query && log.query.toLowerCase().includes(lowerQ)) ||
+                    (log.session_id && log.session_id.toLowerCase().includes(lowerQ)) ||
+                    (log.intent && log.intent.toLowerCase().includes(lowerQ)) ||
+                    (log.message_output && log.message_output.toLowerCase().includes(lowerQ)) ||
+                    (log.error_message && log.error_message.toLowerCase().includes(lowerQ))
+                );
+            }, [logs, searchQuery]);
+
+            useEffect(() => {
+                if (!chartRef.current || filteredLogs.length === 0) return;
+                
+                const labels = filteredLogs.map(l => l.id);
+                const promptData = filteredLogs.map(l => l.tokens?.prompt || 0);
+                const completionData = filteredLogs.map(l => l.tokens?.completion || 0);
+
+                if (chartInstance.current) {
+                    chartInstance.current.data.labels = labels;
+                    chartInstance.current.data.datasets[0].data = promptData;
+                    chartInstance.current.data.datasets[1].data = completionData;
+                    chartInstance.current.update();
+                } else {
+                    const ctx = chartRef.current.getContext('2d');
+                    chartInstance.current = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: labels,
+                            datasets: [
+                                {
+                                    label: 'Prompt Tokens',
+                                    data: promptData,
+                                    borderColor: '#3b82f6',
+                                    backgroundColor: 'rgba(59, 130, 246, 0.05)',
+                                    fill: true,
+                                    tension: 0.4,
+                                    pointRadius: 4,
+                                    borderWidth: 2
+                                },
+                                {
+                                    label: 'Completion Tokens',
+                                    data: completionData,
+                                    borderColor: '#f97316',
+                                    backgroundColor: 'rgba(249, 115, 22, 0.05)',
+                                    fill: true,
+                                    tension: 0.4,
+                                    pointRadius: 4,
+                                    borderWidth: 2
+                                }
+                            ]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: { legend: { display: true, position: 'top' } },
+                            scales: {
+                                y: { beginAtZero: true, grid: { color: '#f1f5f9' } },
+                                x: { grid: { display: false } }
+                            }
+                        }
+                    });
+                }
+            }, [filteredLogs]);
+
+            const exportToExcel = () => {
+                const wsData = filteredLogs.map(log => ({
+                    "ID": log.id,
+                    "Session ID": log.session_id,
+                    "Farm ID": log.farm_id,
+                    "Role": log.role,
+                    "Query": log.query,
+                    "Status": log.status,
+                    "Error": log.error_message,
+                    "Duration (ms)": log.duration_ms,
+                    "Input Type": log.input_type,
+                    "Output Type": log.output_type,
+                    "Total Tokens": log.tokens?.total,
+                    "Prompt Tokens": log.tokens?.prompt,
+                    "Completion Tokens": log.tokens?.completion,
+                    "Components": log.llm_components,
+                    "Tool": log.tool_used,
+                    "Intent": log.intent,
+                    "Final Msg": log.message_output,
+                    "Time": log.created_at
+                }));
+                const ws = XLSX.utils.json_to_sheet(wsData);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, "Dashboard Logs");
+                XLSX.writeFile(wb, `Dashboard_Export.xlsx`);
+            };
+
+            useEffect(() => {
+                fetchLogs();
+                const interval = setInterval(fetchLogs, 5000); 
+                return () => clearInterval(interval);
+            }, []);
+
+            return (
+                <div className="min-h-screen bg-[#fafbfc] px-4 py-6">
+                    <div className="max-w-[98%] mx-auto">
+                        {/* Header */}
+                        <div className="flex justify-between items-end mb-8">
+                            <div>
+                                <h1 className="text-5xl font-extrabold tracking-tight mb-2">
+                                    <span className="shimmer mr-3">AI Dashboard</span>
+                                    <span className="text-slate-800">Expert</span>
+                                </h1>
+                                <p className="text-slate-400 font-medium flex items-center gap-2">
+                                    <span className="w-2 h-2 rounded-full bg-orange-500 animate-led"></span>
+                                    Hệ thống theo dõi thời gian thực
+                                </p>
+                            </div>
+                            <div className="flex gap-3">
+                                <button onClick={exportToExcel} className="px-6 py-3 bg-white text-slate-700 hover:bg-slate-50 border border-slate-200 rounded-2xl font-bold transition-all shadow-sm">
+                                    📥 Xuất Excel
+                                </button>
+                                <button onClick={clearLogs} className="px-6 py-3 bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 rounded-2xl font-bold transition-all shadow-sm">
+                                    🗑️ Xóa Logs
+                                </button>
+                                <button onClick={fetchLogs} className="px-6 py-3 bg-orange-500 text-white hover:bg-orange-600 rounded-2xl font-bold transition-all shadow-[0_10px_20px_rgba(249,115,22,0.3)]">
+                                    Làm mới ngay
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Search and Stats */}
+                        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
+                            <div className="lg:col-span-3 bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="text-lg font-bold text-slate-800">📊 Xu hướng Token sử dụng</h3>
+                                    <div className="flex items-center gap-3 w-1/2">
+                                        <input 
+                                            type="text" 
+                                            placeholder="🔍 Tìm kiếm log (Query, Session, Intent, Lỗi...)" 
+                                            className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 transition-all text-sm"
+                                            value={searchQuery}
+                                            onChange={(e) => setSearchQuery(e.target.value)}
+                                        />
+                                        <span className="text-xs font-bold text-orange-500 bg-orange-50 px-3 py-1 rounded-full whitespace-nowrap">Live Update</span>
+                                    </div>
+                                </div>
+                                <div className="chart-container">
+                                    <canvas ref={chartRef}></canvas>
+                                </div>
+                            </div>
+                            <div className="bg-gradient-to-br from-orange-500 to-orange-600 p-8 rounded-[2.5rem] text-white flex flex-col justify-center items-center text-center shadow-xl shadow-orange-500/20">
+                                <div className="text-5xl font-black mb-2">{filteredLogs.length}</div>
+                                <div className="text-orange-100 font-bold uppercase tracking-widest text-xs">Tổng số phiên lọc</div>
+                                <div className="mt-6 w-full h-px bg-white/20"></div>
+                                <div className="mt-6 text-sm font-medium opacity-90 flex flex-col gap-2">
+                                    <div>Tỉ lệ lỗi: {filteredLogs.length > 0 ? Math.round((filteredLogs.filter(l => l.status === 'error').length / filteredLogs.length) * 100) : 0}%</div>
+                                </div>
+                                <div className="mt-2 flex gap-1">
+                                    {[1,2,3].map(i => <div key={i} className={`w-1.5 h-1.5 rounded-full bg-white opacity-${i*20} animate-pulse`}></div>)}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Table */}
+                        <div className="bg-white rounded-[2.5rem] overflow-hidden table-container border border-slate-100">
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left border-collapse">
+                                    <thead className="bg-slate-50 border-b border-slate-100">
+                                        <tr>
+                                            {['# / Status', 'Context', 'Query', 'I/O Type', 'Tokens', 'Components & Tools', 'Ý định', 'Kết quả / Lỗi', 'Thời gian'].map(h => 
+                                                <th key={h} className="px-6 py-5 text-slate-400 text-[11px] font-extrabold uppercase tracking-widest">{h}</th>
+                                            )}
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-50">
+                                        {loading ? (
+                                            <tr><td colSpan="9" className="px-8 py-20 text-center text-slate-300 font-bold italic">Vui lòng chờ, dữ liệu đang được đồng bộ...</td></tr>
+                                        ) : filteredLogs.length === 0 ? (
+                                            <tr><td colSpan="9" className="px-8 py-20 text-center text-slate-300 font-bold italic">Không tìm thấy dữ liệu.</td></tr>
+                                        ) : (
+                                            filteredLogs.map(log => (
+                                                <tr key={log.id} className="group hover:bg-orange-50/20 transition-all duration-300">
+                                                    <td className="px-6 py-6">
+                                                        <div className="flex flex-col items-center gap-2">
+                                                            <div className={`w-10 h-10 flex items-center justify-center rounded-2xl text-white font-black text-xs shadow-sm ${log.status === 'error' ? 'bg-red-500' : 'bg-slate-800'}`}>
+                                                                {log.id}
+                                                            </div>
+                                                            <span className={`text-[10px] font-bold uppercase ${log.status === 'error' ? 'text-red-500' : 'text-emerald-500'}`}>
+                                                                {log.status}
+                                                            </span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-6 py-6 text-xs text-slate-500">
+                                                        <div className="mb-1"><span className="font-bold">SS:</span> {log.session_id ? log.session_id.substring(0,8)+'...' : 'N/A'}</div>
+                                                        <div className="mb-1"><span className="font-bold">FM:</span> {log.farm_id ? log.farm_id.substring(0,8)+'...' : 'N/A'}</div>
+                                                        <div><span className="font-bold text-orange-500">{log.role}</span></div>
+                                                    </td>
+                                                    <td className="px-6 py-6 font-bold text-slate-800 max-w-[200px] break-words">
+                                                        {log.query}
+                                                    </td>
+                                                    <td className="px-6 py-6 text-xs font-semibold text-slate-500">
+                                                        <div className="mb-1">IN: <span className="bg-slate-100 px-2 py-1 rounded-md text-[10px]">{log.input_type}</span></div>
+                                                        <div>OUT: <span className="bg-slate-100 px-2 py-1 rounded-md text-[10px]">{log.output_type}</span></div>
+                                                    </td>
+                                                    <td className="px-6 py-6">
+                                                        <div className="text-base font-black text-orange-600">{log.tokens?.total || 0}</div>
+                                                        <div className="text-[10px] font-bold text-slate-400">P:{log.tokens?.prompt || 0} C:{log.tokens?.completion || 0}</div>
+                                                    </td>
+                                                    <td className="px-6 py-6">
+                                                        <div className="text-xs font-bold text-slate-400 uppercase mb-1">{log.llm_components}</div>
+                                                        <div className="text-orange-600 font-extrabold text-[12px]">{log.tool_used}</div>
+                                                    </td>
+                                                    <td className="px-6 py-6 text-xs font-bold text-slate-600">
+                                                        {log.intent}
+                                                    </td>
+                                                    <td className="px-6 py-6 max-w-sm">
+                                                        {log.status === 'error' ? (
+                                                            <div className="text-red-600 text-sm leading-relaxed bg-red-50 p-3 rounded-2xl border border-red-100 font-medium">
+                                                                {log.error_message}
+                                                            </div>
+                                                        ) : (
+                                                            <div className="text-slate-600 text-sm leading-relaxed bg-[#fbfcfd] p-3 rounded-2xl border border-slate-100 italic">
+                                                                {log.message_output}
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-6 py-6 text-xs text-slate-500 font-medium">
+                                                        <div className="mb-1">{log.created_at}</div>
+                                                        {log.duration_ms && <div className="text-blue-500 font-bold">{log.duration_ms} ms</div>}
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

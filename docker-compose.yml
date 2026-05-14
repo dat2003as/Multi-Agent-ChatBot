@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+#  # Database: PostgreSQL with pgvector
+#  db:
+#    image: ankane/pgvector:latest
+#    container_name: chatbot_db
+#    restart: always
+#    environment:
+#      POSTGRES_USER: ai
+#      POSTGRES_PASSWORD: ai
+#      POSTGRES_DB: ai
+#    ports:
+#      - "5532:5432"
+#    volumes:
+#      - ./postgres_data:/var/lib/postgresql/data
+
+  # App: Multi-Agent Chatbot API
+  app:
+    build: .
+    container_name: chatbot_app
+    restart: always
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      - redis
+
+  # Cache: Redis for session memory
+  # Note: If using Azure Redis, you can stop this service and update REDIS_URL in .env
+  redis:
+    image: redis:7.0-alpine
+    container_name: chatbot_redis
+    restart: always
+    ports:
+      - "6379:6379"
+
+#  # Adminer (Optional): Database management UI
+#  adminer:
+#    image: adminer
+#    container_name: chatbot_adminer
+#    restart: always
+#    ports:
+#      - "8080:8080"
+#    depends_on:
+#      - db

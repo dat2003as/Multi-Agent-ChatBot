@@ -1,0 +1,899 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Brain — 3D Flow</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/three@0.147.0/build/three.min.js"></script>
+    <script src="https://unpkg.com/three-spritetext@1.8.1/dist/three-spritetext.min.js"></script>
+    <script src="https://unpkg.com/3d-force-graph@1.73.3/dist/3d-force-graph.min.js"></script>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg-primary: #06090f;
+            --bg-card: rgba(10, 16, 28, 0.75);
+            --bg-card-hover: rgba(16, 24, 40, 0.85);
+            --border-subtle: rgba(100, 160, 255, 0.08);
+            --border-active: rgba(56, 189, 248, 0.4);
+            --text-primary: #e2e8f0;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --accent-blue: #38bdf8;
+            --accent-cyan: #22d3ee;
+            --accent-purple: #a78bfa;
+            --accent-green: #4ade80;
+            --accent-orange: #fb923c;
+            --accent-red: #f87171;
+            --glow-blue: rgba(56, 189, 248, 0.15);
+            --radius-lg: 16px;
+            --radius-md: 12px;
+            --radius-sm: 8px;
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+
+        /* Animated nebula background */
+        .nebula-bg {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            z-index: 0;
+            background:
+                radial-gradient(ellipse 80% 60% at 20% 80%, rgba(6, 78, 130, 0.15) 0%, transparent 70%),
+                radial-gradient(ellipse 60% 50% at 75% 20%, rgba(88, 28, 135, 0.12) 0%, transparent 70%),
+                radial-gradient(ellipse 50% 40% at 50% 50%, rgba(14, 116, 144, 0.08) 0%, transparent 60%);
+            animation: nebulaShift 25s ease-in-out infinite alternate;
+        }
+
+        @keyframes nebulaShift {
+            0%   { filter: hue-rotate(0deg) brightness(1); }
+            50%  { filter: hue-rotate(15deg) brightness(1.1); }
+            100% { filter: hue-rotate(-10deg) brightness(0.95); }
+        }
+
+        #graph-container {
+            width: 100vw;
+            height: 100vh;
+            position: absolute;
+            top: 0; left: 0;
+            z-index: 1;
+        }
+
+        /* ─── Glass Panel Base ─── */
+        .glass-panel {
+            background: var(--bg-card);
+            backdrop-filter: blur(20px) saturate(1.4);
+            -webkit-backdrop-filter: blur(20px) saturate(1.4);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-lg);
+            box-shadow:
+                0 4px 30px rgba(0, 0, 0, 0.4),
+                0 0 60px rgba(56, 189, 248, 0.03),
+                inset 0 1px 0 rgba(255, 255, 255, 0.04);
+            overflow: hidden;
+        }
+
+        /* ─── Sidebar (Left) ─── */
+        #sidebar {
+            position: absolute;
+            top: 20px; left: 20px;
+            width: 340px;
+            max-height: calc(100vh - 40px);
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-header {
+            padding: 20px 22px 16px;
+            border-bottom: 1px solid var(--border-subtle);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .brand-title {
+            font-size: 18px;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue), var(--accent-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .brand-subtitle {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 3px;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .refresh-btn {
+            width: 36px; height: 36px;
+            border: 1px solid var(--border-subtle);
+            border-radius: 10px;
+            background: rgba(255,255,255,0.03);
+            color: var(--text-secondary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+        .refresh-btn:hover {
+            background: rgba(56, 189, 248, 0.1);
+            border-color: var(--border-active);
+            color: var(--accent-blue);
+            transform: rotate(60deg);
+        }
+
+        .request-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+        }
+
+        .request-item {
+            padding: 14px 16px;
+            border-radius: var(--radius-md);
+            margin-bottom: 6px;
+            cursor: pointer;
+            border: 1px solid transparent;
+            transition: all 0.25s ease;
+            background: rgba(255, 255, 255, 0.02);
+            position: relative;
+        }
+        .request-item::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            border-radius: var(--radius-md);
+            opacity: 0;
+            transition: opacity 0.25s;
+            background: linear-gradient(135deg, rgba(56, 189, 248, 0.06), rgba(168, 85, 247, 0.04));
+        }
+        .request-item:hover {
+            border-color: rgba(255,255,255,0.06);
+            transform: translateX(2px);
+        }
+        .request-item:hover::before { opacity: 1; }
+        .request-item.active {
+            border-color: var(--border-active);
+            background: rgba(56, 189, 248, 0.08);
+            box-shadow: 0 0 20px rgba(56, 189, 248, 0.08);
+        }
+        .request-item.active::before { opacity: 1; }
+
+        .request-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+        .request-id {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+        .request-status {
+            font-size: 10px;
+            padding: 2px 8px;
+            border-radius: 20px;
+            font-weight: 600;
+            letter-spacing: 0.03em;
+        }
+        .status-success { background: rgba(74, 222, 128, 0.12); color: var(--accent-green); }
+        .status-error { background: rgba(248, 113, 113, 0.12); color: var(--accent-red); }
+
+        .request-query {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+            line-height: 1.4;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .request-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+        .tag {
+            font-size: 10px;
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-weight: 500;
+            letter-spacing: 0.02em;
+        }
+        .tag-tool { background: rgba(56, 189, 248, 0.1); color: var(--accent-blue); }
+        .tag-time { background: rgba(168, 139, 250, 0.1); color: var(--accent-purple); }
+        .tag-tokens { background: rgba(74, 222, 128, 0.1); color: var(--accent-green); }
+
+        /* ─── Steps Panel (Right) ─── */
+        #steps-panel {
+            position: absolute;
+            top: 20px; right: 20px;
+            width: 360px;
+            max-height: calc(100vh - 40px);
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s;
+            transform: translateX(420px);
+            opacity: 0;
+        }
+        #steps-panel.visible {
+            transform: translateX(0);
+            opacity: 1;
+        }
+
+        .steps-header {
+            padding: 20px 22px 16px;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        .steps-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .steps-title-icon {
+            width: 20px; height: 20px;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .step-count {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 4px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .step-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+        }
+
+        .step-item {
+            padding: 14px 16px;
+            margin-bottom: 4px;
+            position: relative;
+            border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+            border-left: 3px solid rgba(255, 255, 255, 0.06);
+            background: transparent;
+            transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .step-item.active {
+            border-left-color: var(--accent-blue);
+            background: rgba(56, 189, 248, 0.06);
+            transform: translateX(4px);
+            box-shadow: -3px 0 12px rgba(56, 189, 248, 0.1);
+        }
+        .step-item.completed {
+            border-left-color: var(--accent-green);
+            opacity: 0.5;
+        }
+        .step-item.completed .step-node { color: var(--accent-green); }
+
+        .step-node {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-muted);
+            margin-bottom: 5px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 500;
+        }
+        .step-arrow {
+            color: var(--accent-blue);
+            font-size: 12px;
+        }
+
+        .step-action {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-primary);
+            line-height: 1.4;
+        }
+
+        .step-connector {
+            position: absolute;
+            top: -4px; left: -3px;
+            height: 4px; width: 3px;
+            background: rgba(255, 255, 255, 0.04);
+        }
+        .step-item:first-child .step-connector { display: none; }
+
+        /* ─── Legend Panel ─── */
+        #legend-panel {
+            position: absolute;
+            bottom: 24px; left: 20px;
+            z-index: 10;
+            padding: 16px 20px;
+            min-width: 220px;
+        }
+
+        .legend-title {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+            font-weight: 600;
+        }
+
+        .legend-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px 16px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .legend-dot {
+            width: 10px; height: 10px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            box-shadow: 0 0 6px currentColor;
+        }
+        .legend-label {
+            font-size: 11px;
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+
+        /* ─── Status Bar ─── */
+        #status-bar {
+            position: absolute;
+            bottom: 28px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+            padding: 10px 24px;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            opacity: 0;
+            transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+            pointer-events: none;
+            border-radius: 40px;
+        }
+        #status-bar.visible {
+            opacity: 1;
+        }
+        .status-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: var(--accent-green);
+            box-shadow: 0 0 10px var(--accent-green);
+            animation: statusPulse 2s ease-in-out infinite;
+        }
+        @keyframes statusPulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.6; transform: scale(0.85); }
+        }
+        #status-text {
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        /* ─── Scrollbar ─── */
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+        /* ─── Empty State ─── */
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-muted);
+        }
+        .empty-state-icon {
+            width: 48px; height: 48px;
+            margin: 0 auto 16px;
+            border-radius: 14px;
+            background: rgba(56, 189, 248, 0.06);
+            border: 1px solid var(--border-subtle);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+        .empty-state-title {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
+        .empty-state-desc {
+            font-size: 11px;
+            color: var(--text-muted);
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="nebula-bg"></div>
+    <div id="graph-container"></div>
+
+    <!-- Left Sidebar: Request List -->
+    <div id="sidebar" class="glass-panel">
+        <div class="sidebar-header">
+            <div>
+                <div class="brand-title">AI Brain</div>
+                <div class="brand-subtitle">API Execution Flow</div>
+            </div>
+            <button onclick="fetchRequests()" class="refresh-btn" title="Refresh">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            </button>
+        </div>
+        <div id="request-list" class="request-list">
+            <div class="empty-state">
+                <div class="empty-state-icon">⏳</div>
+                <div class="empty-state-title">Loading requests…</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Panel: Execution Steps -->
+    <div id="steps-panel" class="glass-panel">
+        <div class="steps-header">
+            <div class="steps-title">
+                <div class="steps-title-icon">
+                    <svg width="12" height="12" fill="none" stroke="white" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                </div>
+                Execution Path
+            </div>
+            <div class="step-count" id="step-count">0 steps</div>
+        </div>
+        <div id="step-list" class="step-list"></div>
+    </div>
+
+    <!-- Bottom Left: Legend -->
+    <div id="legend-panel" class="glass-panel">
+        <div class="legend-title">Node Legend</div>
+        <div class="legend-grid">
+            <div class="legend-item"><div class="legend-dot" style="color:#60a5fa;background:#60a5fa"></div><span class="legend-label">Client / API</span></div>
+            <div class="legend-item"><div class="legend-dot" style="color:#fbbf24;background:#fbbf24"></div><span class="legend-label">Orchestrator</span></div>
+            <div class="legend-item"><div class="legend-dot" style="color:#f472b6;background:#f472b6"></div><span class="legend-label">Azure OpenAI</span></div>
+            <div class="legend-item"><div class="legend-dot" style="color:#a78bfa;background:#a78bfa"></div><span class="legend-label">Tools</span></div>
+            <div class="legend-item"><div class="legend-dot" style="color:#34d399;background:#34d399"></div><span class="legend-label">Domains A1–A4</span></div>
+            <div class="legend-item"><div class="legend-dot" style="color:#22d3ee;background:#22d3ee"></div><span class="legend-label">Databases</span></div>
+            <div class="legend-item"><div class="legend-dot" style="color:#fb923c;background:#fb923c"></div><span class="legend-label">External APIs</span></div>
+        </div>
+    </div>
+
+    <!-- Bottom Center: Status -->
+    <div id="status-bar" class="glass-panel">
+        <div class="status-dot"></div>
+        <span id="status-text">Idle</span>
+    </div>
+
+    <script>
+        // ─── Color Palette (unified per group) ───
+        const COLORS = {
+            clientApi:   '#60a5fa',   // sky blue
+            orchestrator:'#fbbf24',   // warm gold
+            llm:         '#f472b6',   // pink magenta
+            tools:       '#a78bfa',   // soft violet
+            domains:     '#34d399',   // emerald green
+            external:    '#fb923c',   // warm orange
+            databases:   '#22d3ee',   // cyan
+        };
+
+        const graphData = {
+            nodes: [
+                { id: "USER",          group: 1, name: "User Client",     color: COLORS.clientApi,    size: 5  },
+                { id: "API_CHAT",      group: 1, name: "FastAPI /chat",   color: COLORS.clientApi,    size: 6  },
+                { id: "ORCHESTRATOR",  group: 2, name: "Orchestrator",    color: COLORS.orchestrator, size: 10 },
+                { id: "LLM",           group: 3, name: "Azure OpenAI",    color: COLORS.llm,          size: 7  },
+                { id: "TOOL_GENERAL",  group: 4, name: "General Advisor", color: COLORS.tools,        size: 5  },
+                { id: "TOOL_RAG",      group: 4, name: "Document Search", color: COLORS.tools,        size: 6  },
+                { id: "TOOL_SQL",      group: 4, name: "Data Query",      color: COLORS.tools,        size: 7  },
+                { id: "TOOL_REALTIME", group: 4, name: "Realtime Info",   color: COLORS.tools,        size: 6  },
+                { id: "A1_FARM_OPS",   group: 5, name: "A1 Farm Ops",    color: COLORS.domains,      size: 5  },
+                { id: "A2_INVENTORY",  group: 5, name: "A2 Inventory",   color: COLORS.domains,      size: 5  },
+                { id: "A3_ANALYTICS",  group: 5, name: "A3 Analytics",   color: COLORS.domains,      size: 5  },
+                { id: "A4_IOT",        group: 5, name: "A4 IoT Devices", color: COLORS.domains,      size: 5  },
+                { id: "TEPBAC",        group: 6, name: "Tepbac.com",     color: COLORS.external,     size: 4  },
+                { id: "WTTR_IN",       group: 6, name: "Wttr.in",        color: COLORS.external,     size: 4  },
+                { id: "VECTOR_DB",     group: 7, name: "Vector DB",      color: COLORS.databases,    size: 6  },
+                { id: "POSTGRES_DB",   group: 7, name: "PostgreSQL",     color: COLORS.databases,    size: 8  }
+            ],
+            links: [
+                { source: "USER",         target: "API_CHAT" },
+                { source: "API_CHAT",     target: "USER" },
+                { source: "API_CHAT",     target: "ORCHESTRATOR" },
+                { source: "ORCHESTRATOR", target: "API_CHAT" },
+                { source: "ORCHESTRATOR", target: "LLM" },
+                { source: "LLM",          target: "ORCHESTRATOR" },
+                { source: "ORCHESTRATOR", target: "TOOL_GENERAL" },
+                { source: "TOOL_GENERAL", target: "ORCHESTRATOR" },
+                { source: "ORCHESTRATOR", target: "TOOL_RAG" },
+                { source: "TOOL_RAG",     target: "ORCHESTRATOR" },
+                { source: "ORCHESTRATOR", target: "TOOL_SQL" },
+                { source: "TOOL_SQL",     target: "ORCHESTRATOR" },
+                { source: "ORCHESTRATOR", target: "TOOL_REALTIME" },
+                { source: "TOOL_REALTIME",target: "ORCHESTRATOR" },
+                { source: "TOOL_RAG",     target: "VECTOR_DB" },
+                { source: "VECTOR_DB",    target: "TOOL_RAG" },
+                { source: "TOOL_SQL",     target: "A1_FARM_OPS" },
+                { source: "A1_FARM_OPS",  target: "TOOL_SQL" },
+                { source: "TOOL_SQL",     target: "A2_INVENTORY" },
+                { source: "A2_INVENTORY", target: "TOOL_SQL" },
+                { source: "TOOL_SQL",     target: "A3_ANALYTICS" },
+                { source: "A3_ANALYTICS", target: "TOOL_SQL" },
+                { source: "TOOL_SQL",     target: "A4_IOT" },
+                { source: "A4_IOT",       target: "TOOL_SQL" },
+                { source: "A1_FARM_OPS",  target: "POSTGRES_DB" },
+                { source: "POSTGRES_DB",  target: "A1_FARM_OPS" },
+                { source: "A2_INVENTORY", target: "POSTGRES_DB" },
+                { source: "POSTGRES_DB",  target: "A2_INVENTORY" },
+                { source: "A3_ANALYTICS", target: "POSTGRES_DB" },
+                { source: "POSTGRES_DB",  target: "A3_ANALYTICS" },
+                { source: "A4_IOT",       target: "POSTGRES_DB" },
+                { source: "POSTGRES_DB",  target: "A4_IOT" },
+                { source: "TOOL_REALTIME",target: "TEPBAC" },
+                { source: "TEPBAC",       target: "TOOL_REALTIME" },
+                { source: "TOOL_REALTIME",target: "WTTR_IN" },
+                { source: "WTTR_IN",      target: "TOOL_REALTIME" }
+            ]
+        };
+
+        // ─── 3D Graph Setup ───
+        const Graph = ForceGraph3D()(document.getElementById('graph-container'))
+            .graphData(graphData)
+            .nodeLabel('name')
+            .nodeColor(n => n.color)
+            .nodeVal(n => n.size)
+            .linkColor(() => 'rgba(120, 180, 255, 0.12)')
+            .linkWidth(0.5)
+            .linkOpacity(0.6)
+            .linkCurvature(0.15)
+            .linkDirectionalParticles(0)
+            .linkDirectionalParticleSpeed(0.012)
+            .linkDirectionalParticleWidth(2.5)
+            .linkDirectionalParticleColor(() => '#ffffff')
+            .backgroundColor('#06090f');
+
+        // Keep nodes compact
+        try { Graph.d3Force('charge').strength(-60); } catch(e) {}
+        try { Graph.d3Force('link').distance(30); } catch(e) {}
+
+        // ─── Glow Texture Factory ───
+        const _texCache = {};
+        function getGlowTexture(colorStr) {
+            if (_texCache[colorStr]) return _texCache[colorStr];
+            const sz = 128;
+            const c = document.createElement('canvas');
+            c.width = sz; c.height = sz;
+            const ctx = c.getContext('2d');
+            const col = new THREE.Color(colorStr);
+            const r = Math.floor(col.r * 255), g = Math.floor(col.g * 255), b = Math.floor(col.b * 255);
+            const grad = ctx.createRadialGradient(sz/2, sz/2, 0, sz/2, sz/2, sz/2);
+            grad.addColorStop(0,   `rgba(${r},${g},${b},1)`);
+            grad.addColorStop(0.15,`rgba(${r},${g},${b},0.7)`);
+            grad.addColorStop(0.4, `rgba(${r},${g},${b},0.2)`);
+            grad.addColorStop(1,   `rgba(${r},${g},${b},0)`);
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, sz, sz);
+            const tex = new THREE.Texture(c);
+            tex.needsUpdate = true;
+            _texCache[colorStr] = tex;
+            return tex;
+        }
+
+        // ─── Node Rendering ───
+        Graph.nodeThreeObject(node => {
+            const group = new THREE.Group();
+            const hl = activeNodeIds.has(node.id);
+            const sz = node.size;
+
+            // Core sphere — MeshBasicMaterial ignores lighting, shows exact color
+            const sphere = new THREE.Mesh(
+                new THREE.SphereGeometry(sz, 32, 32),
+                new THREE.MeshBasicMaterial({ color: node.color })
+            );
+            if (hl) sphere.scale.set(1.2, 1.2, 1.2);
+            group.add(sphere);
+
+            // Outer glow sprite
+            const glowMat = new THREE.SpriteMaterial({
+                map: getGlowTexture(node.color),
+                transparent: true,
+                blending: THREE.AdditiveBlending,
+                opacity: hl ? 0.9 : 0,
+                depthWrite: false
+            });
+            const glow = new THREE.Sprite(glowMat);
+            glow.scale.set(sz * 6, sz * 6, 1);
+            group.add(glow);
+
+            // Active ring
+            if (hl) {
+                const ringGeo = new THREE.RingGeometry(sz * 1.6, sz * 1.8, 48);
+                const ringMat = new THREE.MeshBasicMaterial({
+                    color: node.color,
+                    transparent: true,
+                    opacity: 0.5,
+                    side: THREE.DoubleSide,
+                });
+                const ring = new THREE.Mesh(ringGeo, ringMat);
+                ring.rotation.x = Math.PI / 2;
+                group.add(ring);
+            }
+
+            // Text label
+            const label = new SpriteText(node.name);
+            label.color = hl ? '#ffffff' : '#aabbcc';
+            label.textHeight = hl ? 7 : 5;
+            label.fontWeight = hl ? '600' : '400';
+            label.position.y = (hl ? sz * 1.2 : sz) + 7;
+            group.add(label);
+
+            return group;
+        });
+
+        // ─── Lighting ───
+        const scene = Graph.scene();
+        scene.add(new THREE.AmbientLight(0x222233, 1.5));
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.4);
+        dirLight.position.set(1, 2, 1);
+        scene.add(dirLight);
+
+        // ─── Starfield ───
+        (function addStarField() {
+            const geo = new THREE.BufferGeometry();
+            const verts = [];
+            const sizes = [];
+            for (let i = 0; i < 4000; i++) {
+                verts.push((Math.random() - 0.5) * 2500, (Math.random() - 0.5) * 2500, (Math.random() - 0.5) * 2500);
+                sizes.push(Math.random() * 1.2 + 0.3);
+            }
+            geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+
+            const mat = new THREE.PointsMaterial({
+                color: 0xaaccff,
+                size: 0.8,
+                transparent: true,
+                opacity: 0.6,
+                sizeAttenuation: true,
+            });
+            scene.add(new THREE.Points(geo, mat));
+        })();
+
+        // ─── State ───
+        var currentRequests = [];
+        var playbackTimeout = null;
+        var activeNodeIds = new Set();
+        var activeLinkIds = new Set();
+
+        // ─── Fetch Requests ───
+        async function fetchRequests() {
+            const btn = document.querySelector('.refresh-btn');
+            if (btn) btn.style.animation = 'spin 0.6s ease';
+            try {
+                const res = await fetch('/api/v1/debug/requests?t=' + Date.now());
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                currentRequests = data.reverse();
+                renderSidebar();
+            } catch (err) {
+                document.getElementById('request-list').innerHTML =
+                    `<div class="empty-state">
+                        <div class="empty-state-icon" style="color:var(--accent-red)">✕</div>
+                        <div class="empty-state-title">Connection Error</div>
+                        <div class="empty-state-desc">${err.message}</div>
+                    </div>`;
+            }
+            setTimeout(() => { if (btn) btn.style.animation = ''; }, 700);
+        }
+
+        function renderSidebar() {
+            const el = document.getElementById('request-list');
+            el.innerHTML = '';
+            if (currentRequests.length === 0) {
+                el.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">🦐</div>
+                        <div class="empty-state-title">No requests yet</div>
+                        <div class="empty-state-desc">Chat to see<br>execution flows here.</div>
+                    </div>`;
+                return;
+            }
+            currentRequests.forEach(req => {
+                const div = document.createElement('div');
+                div.className = 'request-item';
+                div.id = `req-${req.id}`;
+                div.onclick = () => playRequest(req);
+
+                const statusCls = req.status === 'success' ? 'status-success' : 'status-error';
+                const toolLabel = req.tool_used && req.tool_used !== 'none' ? req.tool_used : 'No Tool';
+                const duration = req.duration_ms ? req.duration_ms + 'ms' : '—';
+                const tokens = req.tokens?.total || '';
+
+                div.innerHTML = `
+                    <div class="request-meta">
+                        <span class="request-id">#${req.id} · ${req.created_at || ''}</span>
+                        <span class="request-status ${statusCls}">${req.status?.toUpperCase() || ''}</span>
+                    </div>
+                    <div class="request-query" title="${(req.query || '').replace(/"/g, '&quot;')}">${req.query || 'System Action'}</div>
+                    <div class="request-tags">
+                        <span class="tag tag-tool">${toolLabel}</span>
+                        <span class="tag tag-time">${duration}</span>
+                        ${tokens ? `<span class="tag tag-tokens">${tokens} tok</span>` : ''}
+                    </div>
+                `;
+                el.appendChild(div);
+            });
+        }
+
+        // ─── Graph Reset ───
+        function resetGraph() {
+            graphData.nodes.forEach(node => {
+                if (!node.__threeObj) return;
+                const hl = activeNodeIds.has(node.id);
+                const group = node.__threeObj;
+                const sphere = group.children[0];
+                const glow = group.children[1];
+
+                if (sphere) {
+                    const s = hl ? 1.3 : 1.0;
+                    sphere.scale.set(s, s, s);
+                }
+                if (glow?.material) {
+                    glow.material.opacity = hl ? 0.9 : 0;
+                }
+                // Text label is always last child
+                const label = group.children[group.children.length - 1];
+                if (label && label.isSprite && label.text !== undefined) {
+                    label.color = hl ? '#ffffff' : '#aabbcc';
+                    label.textHeight = hl ? 7 : 5;
+                }
+            });
+
+            Graph.linkWidth(0.5);
+            Graph.linkColor(() => 'rgba(120, 180, 255, 0.12)');
+        }
+
+        // ─── Status ───
+        function setStatus(text, show) {
+            const el = document.getElementById('status-bar');
+            document.getElementById('status-text').innerText = text;
+            el.classList.toggle('visible', show);
+        }
+
+        // ─── Playback ───
+        async function playRequest(req) {
+            if (playbackTimeout) clearTimeout(playbackTimeout);
+
+            document.querySelectorAll('.request-item').forEach(el => el.classList.remove('active'));
+            document.getElementById(`req-${req.id}`)?.classList.add('active');
+
+            activeNodeIds.clear();
+            activeLinkIds.clear();
+            Graph.linkDirectionalParticles(0);
+            resetGraph();
+
+            if (!req.steps || req.steps.length === 0) {
+                setStatus('No step data for this request', true);
+                document.getElementById('steps-panel').classList.remove('visible');
+                setTimeout(() => setStatus('', false), 2500);
+                return;
+            }
+
+            // Populate steps panel
+            const panel = document.getElementById('steps-panel');
+            const list = document.getElementById('step-list');
+            document.getElementById('step-count').innerText = `${req.steps.length} steps`;
+            list.innerHTML = '';
+
+            req.steps.forEach((step, idx) => {
+                const el = document.createElement('div');
+                el.className = 'step-item';
+                el.id = `step-${idx}`;
+
+                const fromName = graphData.nodes.find(n => n.id === step.from)?.name || step.from;
+                const toName = graphData.nodes.find(n => n.id === step.to)?.name || step.to;
+
+                el.innerHTML = `
+                    <div class="step-connector"></div>
+                    <div class="step-node">
+                        <span>${fromName}</span>
+                        <span class="step-arrow">→</span>
+                        <span>${toName}</span>
+                    </div>
+                    <div class="step-action">${step.action}</div>
+                `;
+                list.appendChild(el);
+            });
+            panel.classList.add('visible');
+            setStatus(`Playing #${req.id}…`, true);
+
+            // Animate steps
+            for (let i = 0; i < req.steps.length; i++) {
+                const step = req.steps[i];
+                await new Promise(resolve => {
+                    activeNodeIds.clear();
+                    activeLinkIds.clear();
+                    if (step.from) activeNodeIds.add(step.from);
+                    if (step.from && step.to) activeLinkIds.add(`${step.from}->${step.to}`);
+
+                    resetGraph();
+                    setStatus(step.action, true);
+
+                    document.querySelectorAll('.step-item').forEach(el => el.classList.remove('active'));
+                    const stepEl = document.getElementById(`step-${i}`);
+                    if (stepEl) {
+                        stepEl.classList.add('active');
+                        stepEl.classList.remove('completed');
+                        stepEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+
+                    // Directional particle
+                    Graph.linkDirectionalParticleSpeed(0.012);
+                    Graph.linkDirectionalParticleWidth(2.5);
+                    Graph.linkDirectionalParticleColor(() => '#ffffff');
+                    Graph.linkDirectionalParticles(link => {
+                        if (link.source.id === step.from && link.target.id === step.to) return 1;
+                        return 0;
+                    });
+
+                    playbackTimeout = setTimeout(() => {
+                        activeNodeIds.clear();
+                        activeLinkIds.clear();
+                        if (step.to) activeNodeIds.add(step.to);
+                        Graph.linkDirectionalParticles(0);
+                        resetGraph();
+
+                        if (stepEl) stepEl.classList.add('completed');
+                        setTimeout(resolve, 350);
+                    }, 900);
+                });
+            }
+
+            playbackTimeout = setTimeout(() => {
+                activeNodeIds.clear();
+                activeLinkIds.clear();
+                Graph.linkDirectionalParticles(0);
+                resetGraph();
+                setStatus('Playback Complete', true);
+                setTimeout(() => setStatus('', false), 2000);
+            }, 600);
+        }
+
+        // ─── Init ───
+        fetchRequests();
+
+        // Auto-refresh every 15s
+        setInterval(fetchRequests, 15000);
+    </script>
+</body>
+</html>

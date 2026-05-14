@@ -1,0 +1,91 @@
+# === Python ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# === Virtual Environment ===
+venv/
+.venv/
+env/
+.env_python/
+ENV/
+env.bak/
+venv.bak/
+
+# === Environment Variables ===
+.env
+.env.*
+!.env.example
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+
+# === IDEs & Editors ===
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+
+# === Operating System ===
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# === Logs & Databases ===
+*.log
+logs/
+*.sqlite
+*.db
+postgres_data/
+
+# === AI & Data ===
+data/
+outputs/
+models/
+embeddings/
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+tests/
+# === Docker ===
+.docker/
+docker-compose.override.yml
+
+test_full_system.py
+trainVanaKhoThu2.py
+vanna_error_log.csv
+app/DB_BE/
+docs/
+scripts/
